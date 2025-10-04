@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tamu Express - Admin Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+<header class="bg-purple-600 text-white p-4 flex justify-between items-center">
+  <h1 class="font-bold text-lg">Admin Portal</h1>
+</header>
+<main class="p-4" id="app"></main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getFirestore, collection, onSnapshot, addDoc, updateDoc, doc } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyApi2RjwEXEW2mTwCMiYERKUNAYL8Toddk",
+    authDomain: "tamuexpress-26e4a.firebaseapp.com",
+    projectId: "tamuexpress-26e4a",
+    storageBucket: "tamuexpress-26e4a.appspot.com",
+    messagingSenderId: "202068792631",
+    appId: "1:202068792631:web:8a9b97028ebd7a45af76b2"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const ADMIN_USER = { name: "TamuExpress", pass: "dfgs8" };
+  let currentAdmin = null;
+  let hotels = [];
+  let orders = [];
+
+  function escapeHTML(str){return(str||"").replace(/[&<>'"]/g,t=>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[t]));}
+
+  function render(){
+    const app=document.getElementById("app");
+    if(currentAdmin){
+      app.innerHTML=`
+        <h2 class="text-xl font-semibold mb-4">Admin Dashboard</h2>
+        <div class="bg-white p-4 shadow rounded mb-6">
+          <h3 class="font-bold mb-2">Add New Hotel</h3>
+          <form id="addHotel" class="space-y-2">
+            <input name="name" placeholder="Hotel Name" class="border p-2 w-full"/>
+            <input name="pass" type="password" placeholder="Password" class="border p-2 w-full"/>
+            <input name="till" placeholder="Till Number" class="border p-2 w-full"/>
+            <button class="bg-green-600 text-white px-3 py-1 rounded">Add Hotel</button>
+          </form>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Hotels</h3>
+        <ul class="space-y-3 mb-6">
+          ${hotels.map(h=>`
+            <li class="bg-white shadow rounded p-3">
+              <h3 class="font-semibold">${escapeHTML(h.name)}</h3>
+              <p>Till: ${escapeHTML(h.till)}</p>
+              <p>Status: ${h.blocked?"❌ Blocked":"✅ Active"}</p>
+              <button class="toggleBlockBtn bg-yellow-500 text-white px-2 py-1 rounded mt-1"
+                data-id="${h.id}" data-blocked="${h.blocked}">
+                ${h.blocked?"Unblock":"Block"}
+              </button>
+            </li>`).join("")}
+        </ul>
+        <h3 class="text-lg font-semibold mb-2">All Orders</h3>
+        ${orders.length===0?"<p>No orders yet</p>":`
+          <ul class="space-y-3">
+            ${orders.map(o=>`
+              <li class="bg-white shadow rounded p-3">
+                <h3>Order #${o.id}</h3>
+                <p><strong>Customer:</strong> ${escapeHTML(o.customerName)} (${escapeHTML(o.customerPhone)})</p>
+                <p><strong>Hotel:</strong> ${escapeHTML((hotels.find(h=>h.id===o.hotelId)||{}).name||"Unknown")}</p>
+                <ul class="text-sm text-gray-600 mb-2">
+                  ${o.items.map(i=>`<li>${escapeHTML(i.name)} - KSh ${i.price}</li>`).join("")}
+                </ul>
+                <p>Subtotal: KSh ${o.subtotal}</p>
+                <p>Service Fee: KSh ${o.serviceFee}</p>
+                <p><strong>Total: KSh ${o.total}</strong></p>
+              </li>`).join("")}
+          </ul>`}
+        <button id="logoutAdmin" class="bg-red-500 text-white px-3 py-1 rounded mt-6">Logout</button>`;
+    }else{
+      app.innerHTML=`
+        <h2 class="text-xl font-semibold mb-4">Admin Login</h2>
+        <form id="adminLogin" class="space-y-2">
+          <input name="name" placeholder="Username" class="border p-2 w-full"/>
+          <input name="pass" type="password" placeholder="Password" class="border p-2 w-full"/>
+          <button class="bg-purple-600 text-white px-3 py-1 rounded">Login</button>
+        </form>`;
+    }
+  }
+
+  // Real-time updates
+  onSnapshot(collection(db,"hotels"), snap=>{
+    hotels=snap.docs.map(d=>({id:d.id,...d.data()})); if(currentAdmin)render();
+  });
+  onSnapshot(collection(db,"orders"), snap=>{
+    orders=snap.docs.map(d=>({id:d.id,...d.data()})); if(currentAdmin)render();
+  });
+
+  // Events
+  document.addEventListener("click",async e=>{
+    if(e.target.classList.contains("toggleBlockBtn")){
+      const hotelId=e.target.dataset.id;
+      const blocked=e.target.dataset.blocked==="true";
+      await updateDoc(doc(db,"hotels",hotelId),{blocked:!blocked});
+    }
+    if(e.target.id==="logoutAdmin"){currentAdmin=null;render();}
+  });
+
+  document.addEventListener("submit",async e=>{
+    e.preventDefault();
+    if(e.target.id==="adminLogin"){
+      const name=e.target.name.value.trim(), pass=e.target.pass.value;
+      if(name===ADMIN_USER.name&&pass===ADMIN_USER.pass){currentAdmin=name;render();}
+      else alert("Invalid admin credentials");
+    }
+    if(e.target.id==="addHotel"){
+      const name=e.target.name.value.trim(), pass=e.target.pass.value, till=e.target.till.value.trim();
+      if(!name||!pass||!till) return alert("Fill all fields");
+      const newHotel=await addDoc(collection(db,"hotels"),{name,pass,till,blocked:false});
+      await addDoc(collection(db,"restaurants"),{hotelId:newHotel.id,name:`${name} Menu`,menu:[]});
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
